@@ -226,11 +226,17 @@ def generate_dashboard():
         for (source, target), duration in final_edges:
             G.add_edge(source, target, weight=duration)
 
+        # 6bis. CALCUL CENTRALITÉ (Influence)
+        print("Calcul de la centralité (Influence)...")
+        # Centralité d'intermédiarité : qui fait le lien entre les groupes ?
+        centrality = nx.betweenness_centrality(G, weight='weight')
+
         # 7. Données Visuelles avec GROUPES par Etablissement
         print("Génération du design...")
         node_data = []
         for person in G.nodes():
             degree = G.degree[person]
+            score = centrality.get(person, 0) # Score d'influence
             
             p_facilities = list(person_facilities.get(person, []))
             p_charges = list(person_charges.get(person, []))
@@ -245,10 +251,11 @@ def generate_dashboard():
                 "id": person, 
                 "label": person, 
                 "group": main_facility, 
-                "value": degree, 
+                "value": degree, # Taille = connexions
+                "influence": score, # Donnée pour le top 5
                 "facilities": p_facilities, 
                 "charges": p_charges,
-                "title": f"{person}\nConnexions: {degree}\nCharges: {charges_display}"
+                "title": f"{person}\nConnexions: {degree}\nInfluence: {score:.4f}\nCharges: {charges_display}"
             })
 
         edge_data = []
@@ -283,7 +290,7 @@ def generate_dashboard():
         
         json_str = json.dumps(network_data)
 
-        # 8. HTML & CSS Dashboard
+        # 8. HTML & CSS
         html_content = f"""
 <!DOCTYPE html>
 <html lang="fr">
@@ -326,7 +333,7 @@ def generate_dashboard():
         }}
         
         h1 {{ font-weight: 700; font-size: 22px; margin: 0 0 25px 0; color: var(--primary); display: flex; align-items: center; gap: 12px; }}
-        .section-title {{ font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6c757d; margin-bottom: 12px; margin-top: 25px; letter-spacing: 1px; }}
+        .section-title {{ font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6c757d; margin-bottom: 12px; margin-top: 25px; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; }}
 
         .input-wrapper {{ position: relative; margin-bottom:10px; }}
         input[type="text"], select {{
@@ -366,6 +373,15 @@ def generate_dashboard():
         .stat-num {{ font-size: 24px; font-weight: 700; color: var(--primary); display: block; line-height: 1; }}
         .stat-desc {{ font-size: 10px; color: #6c757d; text-transform: uppercase; font-weight: 600; }}
 
+        /* Top 5 Box */
+        .top-box {{ background: #fff; padding: 10px; border-radius: 12px; border: 1px solid #ced4da; margin-bottom: 20px; }}
+        .top-item {{ display: flex; justify_content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #eee; font-size: 13px; cursor: pointer; transition: 0.2s; }}
+        .top-item:last-child {{ border-bottom: none; }}
+        .top-item:hover {{ background: #f8f9fa; color: var(--primary); }}
+        .top-rank {{ font-weight: 700; color: var(--secondary); margin-right: 10px; width: 15px; }}
+        .top-name {{ flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+        .top-score {{ font-size: 10px; color: #adb5bd; }}
+
         .btn-group {{ display: flex; gap: 10px; margin-top: 20px; }}
         .btn {{ flex: 1; padding: 12px; background: var(--primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; }}
         .btn:hover {{ background: #0b5ed7; transform: translateY(-2px); }}
@@ -400,6 +416,11 @@ def generate_dashboard():
                 <span class="stat-desc">Connexions</span>
             </div>
         </div>
+
+        <div class="section-title"><span>Top Influenceurs</span> <i class="fas fa-crown" style="color:var(--secondary)"></i></div>
+        <div class="top-box" id="top-list">
+            <!-- Rempli par JS -->
+        </div>
         
         <div class="section-title"><span>Filtres Globaux</span> <i class="fas fa-sliders-h"></i></div>
         
@@ -430,6 +451,7 @@ def generate_dashboard():
             <div class="info-title" id="info-title">Nom</div>
             <div class="info-row"><span class="info-label">Etablissement</span> <span class="info-val" id="info-fac">-</span></div>
             <div class="info-row"><span class="info-label">Connexions</span> <span class="info-val" id="info-conns">-</span></div>
+            <div class="info-row"><span class="info-label">Influence</span> <span class="info-val" id="info-score">-</span></div>
             <div class="info-row" id="row-duration" style="display:none"><span class="info-label">Durée</span> <span class="info-val" id="info-duration">-</span></div>
             <div id="charges-container" style="display:none; margin-top:10px; border-top:1px solid #dee2e6; padding-top:10px;">
                 <span class="info-label" style="font-size:11px;">CHARGES</span>
@@ -438,8 +460,12 @@ def generate_dashboard():
         </div>
 
         <div class="btn-group">
-            <button class="btn" onclick="resetView()"><i class="fas fa-sync-alt"></i> Reset</button>
+            <button class="btn" onclick="exportCanvas()"><i class="fas fa-camera"></i> Photo</button>
             <button class="btn btn-secondary" onclick="togglePhysics()" id="btn-physics"><i class="fas fa-pause"></i> Pause</button>
+        </div>
+        
+        <div style="margin-top: 15px; text-align:center;">
+             <button class="btn btn-secondary" style="width:100%" onclick="resetView()"><i class="fas fa-sync-alt"></i> Reset Vue</button>
         </div>
         
         <div style="margin-top: 20px; font-size: 11px; text-align: center;">
@@ -523,10 +549,24 @@ def generate_dashboard():
         const facSelect = document.getElementById('facility-select');
         const statEdges = document.getElementById('stat-edges');
         const statNodes = document.getElementById('stat-nodes');
+        const topList = document.getElementById('top-list');
 
         // Init Stats
         statNodes.innerText = allNodes.length;
         statEdges.innerText = allEdges.length;
+
+        // --- POPULATE TOP 5 INFLUENCEURS ---
+        // Trier par influence décroissante
+        const sortedByInfluence = [...rawData.nodes].sort((a,b) => (b.influence || 0) - (a.influence || 0));
+        const top5 = sortedByInfluence.slice(0, 5);
+        
+        top5.forEach((n, index) => {{
+            const div = document.createElement('div');
+            div.className = 'top-item';
+            div.innerHTML = `<span class="top-rank">#${{index+1}}</span> <span class="top-name">${{n.label}}</span> <span class="top-score">${{(n.influence*100).toFixed(1)}}</span>`;
+            div.onclick = () => focusNode(n.id);
+            topList.appendChild(div);
+        }});
 
         // Populate Lists
         const dataList = document.getElementById('names');
@@ -562,9 +602,6 @@ def generate_dashboard():
             if (currentFocusId !== null) {{
                 focusSet = new Set();
                 focusSet.add(currentFocusId);
-                
-                // Recherche dans les données brutes pour être sûr d'avoir tous les voisins
-                // en respectant le filtre de durée minimal actuel
                 allEdges.forEach(e => {{
                     if (e.raw_days >= minDays) {{
                         if (e.from === currentFocusId) focusSet.add(e.to);
@@ -578,14 +615,10 @@ def generate_dashboard():
             let visibleNodeIds = new Set();
 
             nodes.forEach(n => {{
-                // A. Filtres Globaux
                 const matchFac = (selectedFac === 'all') || (n.facilities && n.facilities.includes(selectedFac));
                 const matchDegree = n.value >= minDegree;
                 const matchesGlobal = matchFac && matchDegree;
-
-                // B. Filtre Focus
                 const matchesFocus = (focusSet === null) || focusSet.has(n.id);
-
                 const shouldShow = matchesGlobal && matchesFocus;
 
                 if (shouldShow) {{
@@ -618,28 +651,32 @@ def generate_dashboard():
 
         // --- ACTIONS ---
         function focusNode(id) {{
-            currentFocusId = id; // Le focus change -> updateVisibility recalcule tout
-            
+            currentFocusId = id; 
             updateVisibility();
-
             network.focus(id, {{ scale: 1.0, animation: {{ duration: 800, easingFunction: 'easeInOutQuad' }} }});
             network.selectNodes([id]);
-            
             const node = nodes.get(id);
             const connectedCount = network.getConnectedNodes(id).length;
             let facDisplay = node.facilities && node.facilities.length ? node.facilities[0] : "-";
             if (node.facilities && node.facilities.length > 1) facDisplay += " (+)";
-            
             showInfo(node, facDisplay, connectedCount, null);
         }}
 
         function resetView() {{
             currentFocusId = null;
             updateVisibility();
-            
             network.fit({{ animation: {{ duration: 1000 }} }});
             document.getElementById('search-input').value = '';
             document.getElementById('info-card').classList.remove('active');
+        }}
+
+        // --- EXPORT PHOTO ---
+        function exportCanvas() {{
+            const canvas = document.querySelector('canvas');
+            const link = document.createElement('a');
+            link.download = 'prison_network_evidence.png';
+            link.href = canvas.toDataURL();
+            link.click();
         }}
 
         // --- RECHERCHE ---
@@ -658,7 +695,6 @@ def generate_dashboard():
             }}
         }});
 
-        // --- CLICK HANDLER ---
         network.on("click", function(params) {{
             if (params.nodes.length > 0) {{
                 focusNode(params.nodes[0]);
@@ -670,7 +706,6 @@ def generate_dashboard():
             }}
         }});
 
-        // --- INFO PANEL ---
         function showInfo(data, fac, conns, duration) {{
             const card = document.getElementById('info-card');
             const chargesContainer = document.getElementById('charges-container');
@@ -680,6 +715,7 @@ def generate_dashboard():
                 document.getElementById('info-title').innerText = "Relation";
                 document.getElementById('info-fac').innerText = "-";
                 document.getElementById('info-conns').innerText = "-";
+                document.getElementById('info-score').innerText = "-";
                 document.getElementById('row-duration').style.display = 'flex';
                 document.getElementById('info-duration').innerText = duration;
                 chargesContainer.style.display = 'none';
@@ -687,6 +723,7 @@ def generate_dashboard():
                 document.getElementById('info-title').innerText = data.label;
                 document.getElementById('info-fac').innerText = fac;
                 document.getElementById('info-conns').innerText = conns;
+                document.getElementById('info-score').innerText = (data.influence * 100).toFixed(2);
                 document.getElementById('row-duration').style.display = 'none';
                 
                 chargesTags.innerHTML = '';
