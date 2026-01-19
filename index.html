@@ -5,6 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PrisonLink - Accueil</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="Logo.png">
+    
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -38,6 +42,17 @@
             position: relative;
             animation: slideUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
+        
+        /* Logo style */
+        .logo-main {
+            width: 150px;
+            height: 150px;
+            object-fit: contain;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.1));
+            border-radius: 20px;
+        }
+
         h1 {
             font-size: 4rem;
             font-weight: 800;
@@ -79,6 +94,7 @@
             box-shadow: 0 15px 35px rgba(13, 110, 253, 0.4);
             background: #0b5ed7;
         }
+        
         .icon { font-size: 3rem; color: var(--primary); margin-bottom: 20px; }
         
         @keyframes slideUp {
@@ -103,7 +119,9 @@
         <div class="circle c1"></div>
         <div class="circle c2"></div>
         
-        <i class="fas fa-link icon"></i>
+        <!-- Intégration du logo local Logo.png -->
+        <img src="Logo.png" alt="Prison Nexus Logo" class="logo-main">
+        
         <h1>PrisonLink</h1>
         <div class="subtitle">Intelligence Pénitentiaire</div>
         
