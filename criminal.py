@@ -1,0 +1,593 @@
+import pandas as pd
+import networkx as nx
+import json
+from networkx.algorithms import community
+
+def generate_dashboard():
+    # --- CONFIGURATION ---
+    MIN_DURATION_FILTER = 24 
+    # ---------------------
+
+    print(f"Chargement des données... (Base: > {MIN_DURATION_FILTER}h ensemble)")
+    try:
+        # 1. Chargement et nettoyage
+        try:
+            df = pd.read_csv('données nettoyés.csv', sep=';', encoding='utf-8')
+        except UnicodeDecodeError:
+            print("Encodage UTF-8 échoué, passage en Latin-1...")
+            df = pd.read_csv('données nettoyés.csv', sep=';', encoding='latin-1')
+        
+        df['Full Name'] = df['First Name'].str.strip() + ' ' + df['Last Name'].str.strip()
+        
+        date_format = "%Y %b %d %I:%M:%S %p"
+        df['Booking Date Time'] = pd.to_datetime(df['Booking Date Time'], format=date_format, errors='coerce')
+        df['Release Date Time'] = pd.to_datetime(df['Release Date Time'], format=date_format, errors='coerce')
+        
+        df = df.dropna(subset=['Booking Date Time', 'Release Date Time', 'Full Name'])
+
+        # 2. Extraction des charges
+        person_charges = {}
+        for index, row in df.iterrows():
+            name = row['Full Name']
+            charge = str(row['Charge']).strip()
+            if name not in person_charges:
+                person_charges[name] = set()
+            if charge and charge.lower() != 'nan':
+                person_charges[name].add(charge)
+
+        # 3. Consolidation des séjours
+        stays = df.groupby(['Book of Arrest Number', 'Full Name', 'Current Facility']).agg({
+            'Booking Date Time': 'min',
+            'Release Date Time': 'max'
+        }).reset_index()
+
+        print(f"{len(stays)} séjours identifiés. Calcul des interactions...")
+
+        # 4. Calcul des paires et suivi des établissements
+        potential_edges = []
+        facilities = stays['Current Facility'].unique()
+        person_facilities = {} 
+        
+        for facility in facilities:
+            facility_stays = stays[stays['Current Facility'] == facility].to_dict('records')
+            n = len(facility_stays)
+            
+            for p in facility_stays:
+                name = p['Full Name']
+                if name not in person_facilities:
+                    person_facilities[name] = set()
+                person_facilities[name].add(facility)
+
+            for i in range(n):
+                for j in range(i + 1, n):
+                    p1 = facility_stays[i]
+                    p2 = facility_stays[j]
+                    
+                    if p1['Full Name'] == p2['Full Name']:
+                        continue
+                    
+                    start_overlap = max(p1['Booking Date Time'], p2['Booking Date Time'])
+                    end_overlap = min(p1['Release Date Time'], p2['Release Date Time'])
+                    
+                    if end_overlap > start_overlap:
+                        duration_hours = (end_overlap - start_overlap).total_seconds() / 3600
+                        
+                        if duration_hours >= MIN_DURATION_FILTER:
+                            potential_edges.append({
+                                'source': p1['Full Name'],
+                                'target': p2['Full Name'],
+                                'weight': duration_hours
+                            })
+
+        # 5. Agrégation
+        edges_map = {}
+        for edge in potential_edges:
+            key = tuple(sorted((edge['source'], edge['target'])))
+            if key in edges_map:
+                edges_map[key] += edge['weight']
+            else:
+                edges_map[key] = edge['weight']
+        
+        final_edges = [(k, v) for k, v in edges_map.items()]
+        final_edges.sort(key=lambda x: x[1], reverse=True)
+        
+        print(f"Relations conservées: {len(final_edges)}.")
+
+        # 6. Construction du Graphe
+        G = nx.Graph()
+        for (source, target), duration in final_edges:
+            G.add_edge(source, target, weight=duration)
+
+        # 7. Données Visuelles avec GROUPES par Etablissement
+        print("Génération du design...")
+        node_data = []
+        for person in G.nodes():
+            degree = G.degree[person]
+            
+            p_facilities = list(person_facilities.get(person, []))
+            p_charges = list(person_charges.get(person, []))
+            
+            charges_display = ", ".join(p_charges[:3])
+            if len(p_charges) > 3: charges_display += ", ..."
+
+            # On assigne le groupe basé sur la première prison trouvée
+            main_facility = p_facilities[0] if p_facilities else "Inconnu"
+
+            node_data.append({
+                "id": person, 
+                "label": person, 
+                "group": main_facility, 
+                "value": degree, 
+                "facilities": p_facilities, 
+                "charges": p_charges,
+                "title": f"{person}\nConnexions: {degree}\nCharges: {charges_display}"
+            })
+
+        edge_data = []
+        max_duration = final_edges[0][1] if final_edges else 1
+        
+        for u, v, data in G.edges(data=True):
+            duration = data['weight']
+            days = duration / 24
+            width = 1 + (duration / max_duration) * 6
+            
+            edge_data.append({
+                "from": u, 
+                "to": v,
+                "width": width,
+                "title": f"{days:.1f} jours ensemble", 
+                "days_count": f"{days:.1f}",
+                "raw_days": float(f"{days:.2f}"),
+                "color": { "color": "rgba(100, 100, 100, 0.2)", "highlight": "#000000" } 
+            })
+        
+        all_facilities_list = sorted(list(facilities))
+        
+        network_data = {
+            "nodes": node_data,
+            "edges": edge_data,
+            "facilities": all_facilities_list
+        }
+        
+        # --- EXPORT JSON ---
+        with open('network_data.json', 'w', encoding='utf-8') as f:
+            json.dump(network_data, f, ensure_ascii=False, indent=4)
+        
+        json_str = json.dumps(network_data)
+
+        # 8. HTML & CSS
+        html_content = f"""
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyse Réseau - Dashboard</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        :root {{
+            --text: #212529;
+            --background: #f8f9fa;
+            /* COULEURS SIMPLES ET DISTINCTES */
+            --primary: #0d6efd; /* Bleu Franc */
+            --secondary: #fd7e14; /* Orange Franc */
+            --accent: #198754; /* Vert Franc */
+            
+            --panel-bg: rgba(255, 255, 255, 0.95);
+            --shadow: 0 4px 12px rgba(0,0,0,0.15);
+            --border: 1px solid #dee2e6;
+        }}
+
+        body {{ 
+            margin: 0; padding: 0; background-color: var(--background); color: var(--text); 
+            font-family: 'Outfit', sans-serif; overflow: hidden; 
+            background-image: radial-gradient(#adb5bd 1px, transparent 1px);
+            background-size: 30px 30px;
+        }}
+        
+        #mynetwork {{ width: 100vw; height: 100vh; position: absolute; top:0; left:0; z-index: 1; outline: none; }}
+
+        .sidebar {{ 
+            position: absolute; top: 20px; left: 20px; width: 340px; z-index: 10;
+            background: var(--panel-bg); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border-radius: 12px; box-shadow: var(--shadow); padding: 25px;
+            max-height: 90vh; overflow-y: auto; border: var(--border);
+        }}
+        
+        h1 {{ font-weight: 700; font-size: 22px; margin: 0 0 25px 0; color: var(--primary); display: flex; align-items: center; gap: 12px; }}
+        .section-title {{ font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6c757d; margin-bottom: 12px; margin-top: 25px; letter-spacing: 1px; }}
+
+        .input-wrapper {{ position: relative; margin-bottom:10px; }}
+        input[type="text"], select {{
+            width: 100%; padding: 12px 15px; padding-left: 40px;
+            background: #fff; border: 1px solid #ced4da;
+            border-radius: 8px; color: var(--text); font-family: 'Outfit', sans-serif;
+            transition: all 0.2s ease; box-sizing: border-box; font-size: 14px;
+        }}
+        select {{ padding-left: 15px; cursor: pointer; }}
+        input[type="text"]:focus, select:focus {{ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25); }}
+        .search-icon {{ position: absolute; left: 14px; top: 13px; color: var(--primary); pointer-events: none; }}
+
+        .slider-box {{ padding: 15px; background: #fff; border-radius: 8px; border: 1px solid #ced4da; margin-bottom: 10px; }}
+        .slider-header {{ display: flex; justify_content: space-between; font-size: 13px; color: #495057; margin-bottom: 10px; font-weight: 500; }}
+        .slider-value {{ color: #fff; font-weight: 700; background: var(--primary); padding: 2px 8px; border-radius: 6px; font-size: 11px; }}
+        
+        input[type="range"] {{ width: 100%; cursor: pointer; accent-color: var(--primary); height: 5px; background: #e9ecef; border-radius: 3px; appearance: none; }}
+        
+        .info-card {{
+            display: none; margin-top: 25px; background: #fff; border-radius: 12px;
+            box-shadow: var(--shadow); padding: 20px; position: relative; overflow: hidden;
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); border: 1px solid #dee2e6;
+        }}
+        .info-card::before {{ content: ''; position: absolute; top:0; left:0; width: 6px; height: 100%; background: var(--secondary); }}
+        .info-card.active {{ display: block; }}
+        
+        .info-title {{ font-size: 18px; font-weight: 700; margin-bottom: 15px; color: var(--text); border-bottom: 1px solid #eee; padding-bottom: 10px; }}
+        .info-row {{ display: flex; justify_content: space-between; font-size: 13px; margin-bottom: 8px; }}
+        .info-label {{ color: #6c757d; font-weight: 500; }}
+        .info-val {{ color: var(--text); font-weight: 600; text-align: right; max-width: 60%; }}
+
+        .tag-container {{ display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }}
+        .tag {{ background: #e9ecef; color: #495057; font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }}
+
+        .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }}
+        .stat-box {{ background: #fff; padding: 15px; border-radius: 12px; text-align: center; border: 1px solid #ced4da; }}
+        .stat-num {{ font-size: 24px; font-weight: 700; color: var(--primary); display: block; line-height: 1; }}
+        .stat-desc {{ font-size: 10px; color: #6c757d; text-transform: uppercase; font-weight: 600; }}
+
+        .btn-group {{ display: flex; gap: 10px; margin-top: 20px; }}
+        .btn {{ flex: 1; padding: 12px; background: var(--primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; }}
+        .btn:hover {{ background: #0b5ed7; transform: translateY(-2px); }}
+        .btn-secondary {{ background: #fff; color: #495057; border: 1px solid #ced4da; }}
+        .btn-secondary:hover {{ background: #f8f9fa; color: #212529; }}
+
+        #loading-screen {{ position: fixed; inset: 0; background: var(--background); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s; }}
+        .spinner {{ width: 50px; height: 50px; border: 4px solid #dee2e6; border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 0.8s infinite; margin-bottom: 20px; }}
+        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+        @keyframes slideUp {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+    </style>
+</head>
+<body>
+
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <div style="font-size: 14px; font-weight: 600; color: var(--primary); letter-spacing: 2px;">CHARGEMENT DU SYSTÈME</div>
+    </div>
+
+    <div id="mynetwork"></div>
+
+    <div class="sidebar">
+        <h1><i class="fas fa-network-wired"></i> Network Intel.</h1>
+        
+        <div class="stats-grid">
+            <div class="stat-box">
+                <span class="stat-num" id="stat-nodes">0</span>
+                <span class="stat-desc">Détenus</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-num" id="stat-edges">0</span>
+                <span class="stat-desc">Connexions</span>
+            </div>
+        </div>
+        
+        <div class="section-title"><span>Filtres Globaux</span> <i class="fas fa-sliders-h"></i></div>
+        
+        <div class="input-wrapper">
+             <select id="facility-select">
+                <option value="all">🏢 Tous les établissements</option>
+             </select>
+        </div>
+
+        <div class="slider-box">
+            <div class="slider-header"><span><i class="fas fa-clock"></i> Durée min.</span><span class="slider-value" id="days-display">1j</span></div>
+            <input type="range" id="daysFilter" min="1" max="100" value="1" step="1">
+        </div>
+
+        <div class="slider-box">
+            <div class="slider-header"><span><i class="fas fa-users"></i> Importance</span><span class="slider-value" id="degree-display">0+</span></div>
+            <input type="range" id="degreeFilter" min="0" max="20" value="0" step="1">
+        </div>
+        
+        <div class="section-title"><span>Recherche</span> <i class="fas fa-search"></i></div>
+        <div class="input-wrapper">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" id="search-input" list="names" placeholder="Nom ou Charge...">
+            <datalist id="names"></datalist>
+        </div>
+
+        <div id="info-card" class="info-card">
+            <div class="info-title" id="info-title">Nom</div>
+            <div class="info-row"><span class="info-label">Etablissement</span> <span class="info-val" id="info-fac">-</span></div>
+            <div class="info-row"><span class="info-label">Connexions</span> <span class="info-val" id="info-conns">-</span></div>
+            <div class="info-row" id="row-duration" style="display:none"><span class="info-label">Durée</span> <span class="info-val" id="info-duration">-</span></div>
+            <div id="charges-container" style="display:none; margin-top:10px; border-top:1px solid #dee2e6; padding-top:10px;">
+                <span class="info-label" style="font-size:11px;">CHARGES</span>
+                <div class="tag-container" id="charges-tags"></div>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn" onclick="resetView()"><i class="fas fa-sync-alt"></i> Reset</button>
+            <button class="btn btn-secondary" onclick="togglePhysics()" id="btn-physics"><i class="fas fa-pause"></i> Pause</button>
+        </div>
+    </div>
+
+    <script>
+        const rawData = {json_str};
+        
+        const theme = {{
+            primary: '#0d6efd',   // Bleu Franc
+            secondary: '#fd7e14', // Orange Franc
+            accent: '#198754',    // Vert Franc
+            text: '#212529'
+        }};
+
+        // DataSets
+        const allEdges = rawData.edges;
+        const allNodes = rawData.nodes;
+        const nodes = new vis.DataSet(allNodes);
+        const edges = new vis.DataSet(allEdges);
+        const container = document.getElementById('mynetwork');
+        
+        // --- COULEURS PAR ETABLISSEMENT (SIMPLE & VISIBLE) ---
+        const groupsConfig = {{
+            'King County Correctional Facility': {{ 
+                color: {{ background: theme.primary, border: '#0a58ca', highlight: {{ background: '#0b5ed7', border: '#0a58ca' }} }},
+                font: {{ color: '#fff' }}
+            }},
+            'Maleng Regional Justice Center': {{ 
+                color: {{ background: theme.accent, border: '#146c43', highlight: {{ background: '#157347', border: '#146c43' }} }},
+                font: {{ color: '#fff' }}
+            }},
+            'Electronic Home Detention': {{ 
+                color: {{ background: theme.secondary, border: '#e65c00', highlight: {{ background: '#e65c00', border: '#e65c00' }} }},
+                font: {{ color: '#fff' }}
+            }},
+            'Inconnu': {{
+                color: {{ background: '#6c757d', border: '#495057' }},
+                font: {{ color: '#fff' }}
+            }},
+            'default': {{
+                color: {{ background: '#adb5bd', border: '#6c757d' }}
+            }}
+        }};
+
+        const options = {{
+            groups: groupsConfig,
+            nodes: {{
+                shape: 'dot', size: 14, borderWidth: 2,
+                font: {{ size: 14, color: theme.text, face: 'Outfit', strokeWidth: 3, strokeColor: '#ffffff' }},
+                shadow: {{ enabled: true, color: 'rgba(0,0,0,0.2)', size: 10, x: 0, y: 5 }}
+            }},
+            edges: {{
+                smooth: {{ type: 'continuous', roundness: 0.5 }},
+                color: {{ color: 'rgba(100, 100, 100, 0.2)', highlight: theme.primary, hover: theme.primary }},
+                width: 1
+            }},
+            physics: {{
+                forceAtlas2Based: {{ gravitationalConstant: -60, centralGravity: 0.008, springLength: 120, springConstant: 0.06, damping: 0.9, avoidOverlap: 0.5 }},
+                maxVelocity: 5, minVelocity: 0.1, timestep: 0.2, adaptiveTimestep: true,
+                solver: 'forceAtlas2Based', stabilization: {{ enabled: true, iterations: 1000 }}
+            }},
+            interaction: {{ hover: true, tooltipDelay: 200, hideEdgesOnDrag: true, zoomView: true }}
+        }};
+
+        const network = new vis.Network(container, {{nodes, edges}}, options);
+
+        network.on("stabilizationIterationsDone", function () {{
+            document.getElementById('loading-screen').style.opacity = '0';
+            setTimeout(() => {{ document.getElementById('loading-screen').style.display = 'none'; }}, 500);
+        }});
+
+        // --- GLOBAL STATE ---
+        let currentFocusId = null;
+
+        // DOM
+        const daysSlider = document.getElementById('daysFilter');
+        const degreeSlider = document.getElementById('degreeFilter');
+        const facSelect = document.getElementById('facility-select');
+        const statEdges = document.getElementById('stat-edges');
+        const statNodes = document.getElementById('stat-nodes');
+
+        // Init Stats
+        statNodes.innerText = allNodes.length;
+        statEdges.innerText = allEdges.length;
+
+        // Populate Lists
+        const dataList = document.getElementById('names');
+        rawData.nodes.sort((a,b) => a.label.localeCompare(b.label)).forEach(n => {{
+            const opt = document.createElement('option');
+            opt.value = n.label; dataList.appendChild(opt);
+        }});
+        
+        let allCharges = new Set();
+        rawData.nodes.forEach(n => n.charges.forEach(c => allCharges.add(c)));
+        Array.from(allCharges).sort().forEach(c => {{
+            const opt = document.createElement('option');
+            opt.value = c; opt.innerText = "Charge: " + c; dataList.appendChild(opt);
+        }});
+
+        if (rawData.facilities) {{
+            rawData.facilities.forEach(fac => {{
+                const opt = document.createElement('option');
+                opt.value = fac; opt.innerText = "🏢 " + fac; facSelect.appendChild(opt);
+            }});
+        }}
+
+        // --- CŒUR DU SYSTÈME : VISIBILITÉ CENTRALISÉE ---
+        function updateVisibility() {{
+            const minDays = parseInt(daysSlider.value);
+            const minDegree = parseInt(degreeSlider.value);
+            const selectedFac = facSelect.value;
+            
+            document.getElementById('days-display').innerText = minDays + "j";
+            document.getElementById('degree-display').innerText = minDegree + "+";
+
+            let focusSet = null;
+            if (currentFocusId !== null) {{
+                focusSet = new Set();
+                focusSet.add(currentFocusId);
+                
+                // Recherche dans les données brutes pour être sûr d'avoir tous les voisins
+                // en respectant le filtre de durée minimal actuel
+                allEdges.forEach(e => {{
+                    if (e.raw_days >= minDays) {{
+                        if (e.from === currentFocusId) focusSet.add(e.to);
+                        if (e.to === currentFocusId) focusSet.add(e.from);
+                    }}
+                }});
+            }}
+
+            // 1. Filtrage des NOEUDS
+            const nodesUpdates = [];
+            let visibleNodeIds = new Set();
+
+            nodes.forEach(n => {{
+                // A. Filtres Globaux
+                const matchFac = (selectedFac === 'all') || (n.facilities && n.facilities.includes(selectedFac));
+                const matchDegree = n.value >= minDegree;
+                const matchesGlobal = matchFac && matchDegree;
+
+                // B. Filtre Focus
+                const matchesFocus = (focusSet === null) || focusSet.has(n.id);
+
+                const shouldShow = matchesGlobal && matchesFocus;
+
+                if (shouldShow) {{
+                    visibleNodeIds.add(n.id);
+                    if (n.hidden === true) nodesUpdates.push({{id: n.id, hidden: false}});
+                }} else {{
+                    if (n.hidden !== true) nodesUpdates.push({{id: n.id, hidden: true}});
+                }}
+            }});
+            nodes.update(nodesUpdates);
+
+            // 2. Filtrage des LIENS
+            const filteredEdges = allEdges.filter(e => {{
+                if (e.raw_days < minDays) return false;
+                if (!visibleNodeIds.has(e.from) || !visibleNodeIds.has(e.to)) return false;
+                return true;
+            }});
+
+            edges.clear();
+            edges.add(filteredEdges);
+
+            statNodes.innerText = visibleNodeIds.size;
+            statEdges.innerText = filteredEdges.length;
+        }}
+
+        // Listeners
+        daysSlider.addEventListener('input', updateVisibility);
+        degreeSlider.addEventListener('input', updateVisibility);
+        facSelect.addEventListener('change', updateVisibility);
+
+        // --- ACTIONS ---
+        function focusNode(id) {{
+            currentFocusId = id; // Le focus change -> updateVisibility recalcule tout
+            
+            updateVisibility();
+
+            network.focus(id, {{ scale: 1.0, animation: {{ duration: 800, easingFunction: 'easeInOutQuad' }} }});
+            network.selectNodes([id]);
+            
+            const node = nodes.get(id);
+            const connectedCount = network.getConnectedNodes(id).length;
+            let facDisplay = node.facilities && node.facilities.length ? node.facilities[0] : "-";
+            if (node.facilities && node.facilities.length > 1) facDisplay += " (+)";
+            
+            showInfo(node, facDisplay, connectedCount, null);
+        }}
+
+        function resetView() {{
+            currentFocusId = null;
+            updateVisibility();
+            
+            network.fit({{ animation: {{ duration: 1000 }} }});
+            document.getElementById('search-input').value = '';
+            document.getElementById('info-card').classList.remove('active');
+        }}
+
+        // --- RECHERCHE ---
+        document.getElementById('search-input').addEventListener('change', function() {{
+            const val = this.value.toLowerCase();
+            let found = nodes.get({{filter: item => item.label.toLowerCase() === val}});
+            
+            if (found.length === 0) {{
+                const matchedIds = [];
+                nodes.forEach(n => {{
+                    if (n.charges && n.charges.some(c => c.toLowerCase().includes(val))) matchedIds.push(n.id);
+                }});
+                if (matchedIds.length > 0) focusNode(matchedIds[0]);
+            }} else {{
+                focusNode(found[0].id);
+            }}
+        }});
+
+        // --- CLICK HANDLER ---
+        network.on("click", function(params) {{
+            if (params.nodes.length > 0) {{
+                focusNode(params.nodes[0]);
+            }} else if (params.edges.length > 0) {{
+                const edge = edges.get(params.edges[0]);
+                showInfo(null, null, null, edge.days_count + " jours");
+            }} else {{
+                document.getElementById('info-card').classList.remove('active');
+            }}
+        }});
+
+        // --- INFO PANEL ---
+        function showInfo(data, fac, conns, duration) {{
+            const card = document.getElementById('info-card');
+            const chargesContainer = document.getElementById('charges-container');
+            const chargesTags = document.getElementById('charges-tags');
+            
+            if(duration) {{
+                document.getElementById('info-title').innerText = "Relation";
+                document.getElementById('info-fac').innerText = "-";
+                document.getElementById('info-conns').innerText = "-";
+                document.getElementById('row-duration').style.display = 'flex';
+                document.getElementById('info-duration').innerText = duration;
+                chargesContainer.style.display = 'none';
+            }} else {{
+                document.getElementById('info-title').innerText = data.label;
+                document.getElementById('info-fac').innerText = fac;
+                document.getElementById('info-conns').innerText = conns;
+                document.getElementById('row-duration').style.display = 'none';
+                
+                chargesTags.innerHTML = '';
+                if(data.charges && data.charges.length > 0) {{
+                    chargesContainer.style.display = 'block';
+                    data.charges.forEach(c => {{
+                        const tag = document.createElement('div');
+                        tag.className = 'tag'; tag.innerText = c; chargesTags.appendChild(tag);
+                    }});
+                }} else {{ chargesContainer.style.display = 'none'; }}
+            }}
+            card.classList.add('active');
+        }}
+
+        let physicsOn = true;
+        function togglePhysics() {{
+            physicsOn = !physicsOn;
+            network.setOptions({{physics: physicsOn}});
+            const btn = document.getElementById('btn-physics');
+            btn.innerHTML = physicsOn ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play';
+        }}
+    </script>
+</body>
+</html>
+        """
+        
+        output_file = "prison_dashboard.html"
+        with open(output_file, "w", encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"Interface Moderne générée : '{output_file}'")
+
+    except Exception as e:
+        print(f"Erreur critique: {e}")
+
+if __name__ == "__main__":
+    generate_dashboard()
