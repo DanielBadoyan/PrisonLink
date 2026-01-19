@@ -3,6 +3,134 @@ import networkx as nx
 import json
 from networkx.algorithms import community
 
+def generate_landing_page():
+    """Génère la page d'accueil index.html"""
+    html = """
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PrisonLink - Accueil</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0d6efd;
+            --text: #212529;
+            --bg: #f8f9fa;
+        }
+        body {
+            margin: 0; padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-image: radial-gradient(#adb5bd 1px, transparent 1px);
+            background-size: 30px 30px;
+            overflow: hidden;
+        }
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 60px;
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+            border: 1px solid #fff;
+            max-width: 600px;
+            position: relative;
+            animation: slideUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        h1 {
+            font-size: 4rem;
+            font-weight: 800;
+            margin: 0;
+            background: linear-gradient(135deg, #0d6efd, #0a58ca);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -2px;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            color: #6c757d;
+            margin-top: 10px;
+            margin-bottom: 30px;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .description {
+            font-size: 1.1rem;
+            color: #495057;
+            line-height: 1.6;
+            margin-bottom: 40px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 18px 40px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #fff;
+            background: var(--primary);
+            border-radius: 50px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 25px rgba(13, 110, 253, 0.3);
+        }
+        .btn:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(13, 110, 253, 0.4);
+            background: #0b5ed7;
+        }
+        .icon { font-size: 3rem; color: var(--primary); margin-bottom: 20px; }
+        
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(40px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Floating decoration */
+        .circle {
+            position: absolute;
+            border-radius: 50%;
+            background: var(--primary);
+            opacity: 0.1;
+            z-index: -1;
+        }
+        .c1 { width: 300px; height: 300px; top: -100px; left: -100px; }
+        .c2 { width: 200px; height: 200px; bottom: -50px; right: -50px; background: #fd7e14; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="circle c1"></div>
+        <div class="circle c2"></div>
+        
+        <i class="fas fa-link icon"></i>
+        <h1>PrisonLink</h1>
+        <div class="subtitle">Intelligence Pénitentiaire</div>
+        
+        <p class="description">
+            Explorez les connexions cachées au sein du système carcéral. 
+            Notre algorithme analyse les périodes de co-incarcération pour révéler 
+            les réseaux d'influence et les interactions entre détenus.
+        </p>
+        
+        <a href="prison_dashboard.html" class="btn">
+            Accéder au Dashboard <i class="fas fa-arrow-right" style="margin-left: 10px;"></i>
+        </a>
+    </div>
+</body>
+</html>
+    """
+    with open("index.html", "w", encoding="utf-8") as f:
+        f.write(html)
+    print("Page d'accueil 'index.html' générée.")
+
 def generate_dashboard():
     # --- CONFIGURATION ---
     MIN_DURATION_FILTER = 24 
@@ -155,7 +283,7 @@ def generate_dashboard():
         
         json_str = json.dumps(network_data)
 
-        # 8. HTML & CSS
+        # 8. HTML & CSS Dashboard
         html_content = f"""
 <!DOCTYPE html>
 <html lang="fr">
@@ -312,6 +440,10 @@ def generate_dashboard():
         <div class="btn-group">
             <button class="btn" onclick="resetView()"><i class="fas fa-sync-alt"></i> Reset</button>
             <button class="btn btn-secondary" onclick="togglePhysics()" id="btn-physics"><i class="fas fa-pause"></i> Pause</button>
+        </div>
+        
+        <div style="margin-top: 20px; font-size: 11px; text-align: center;">
+            <a href="index.html" style="color: var(--primary); text-decoration: none;">Retour Accueil</a>
         </div>
     </div>
 
@@ -588,6 +720,8 @@ def generate_dashboard():
 
     except Exception as e:
         print(f"Erreur critique: {e}")
+
+    generate_landing_page()
 
 if __name__ == "__main__":
     generate_dashboard()
