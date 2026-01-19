@@ -3,24 +3,33 @@ import networkx as nx
 import json
 from networkx.algorithms import community
 
+# --- CONFIGURATION DU LOGO ---
+# Utilisation du fichier local nommé Logo.png
+LOGO_URL = "Logo.png"
+# -----------------------------
+
 def generate_landing_page():
-    """Génère la page d'accueil index.html"""
-    html = """
+    """Génère la page d'accueil index.html avec le logo et favicon"""
+    html = f"""
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PrisonLink - Accueil</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{LOGO_URL}">
+    
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        :root {
+        :root {{
             --primary: #0d6efd;
             --text: #212529;
             --bg: #f8f9fa;
-        }
-        body {
+        }}
+        body {{
             margin: 0; padding: 0;
             font-family: 'Outfit', sans-serif;
             background-color: var(--bg);
@@ -33,8 +42,8 @@ def generate_landing_page():
             background-image: radial-gradient(#adb5bd 1px, transparent 1px);
             background-size: 30px 30px;
             overflow: hidden;
-        }
-        .container {
+        }}
+        .container {{
             text-align: center;
             background: rgba(255, 255, 255, 0.9);
             padding: 60px;
@@ -44,8 +53,19 @@ def generate_landing_page():
             max-width: 600px;
             position: relative;
             animation: slideUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
-        }
-        h1 {
+        }}
+        
+        /* Logo style */
+        .logo-main {{
+            width: 150px;
+            height: 150px;
+            object-fit: contain;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.1));
+            border-radius: 20px;
+        }}
+
+        h1 {{
             font-size: 4rem;
             font-weight: 800;
             margin: 0;
@@ -53,8 +73,8 @@ def generate_landing_page():
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: -2px;
-        }
-        .subtitle {
+        }}
+        .subtitle {{
             font-size: 1.2rem;
             color: #6c757d;
             margin-top: 10px;
@@ -62,14 +82,14 @@ def generate_landing_page():
             font-weight: 400;
             text-transform: uppercase;
             letter-spacing: 2px;
-        }
-        .description {
+        }}
+        .description {{
             font-size: 1.1rem;
             color: #495057;
             line-height: 1.6;
             margin-bottom: 40px;
-        }
-        .btn {
+        }}
+        .btn {{
             display: inline-block;
             padding: 18px 40px;
             font-size: 1.2rem;
@@ -80,29 +100,30 @@ def generate_landing_page():
             text-decoration: none;
             transition: all 0.3s ease;
             box-shadow: 0 10px 25px rgba(13, 110, 253, 0.3);
-        }
-        .btn:hover {
+        }}
+        .btn:hover {{
             transform: translateY(-5px);
             box-shadow: 0 15px 35px rgba(13, 110, 253, 0.4);
             background: #0b5ed7;
-        }
-        .icon { font-size: 3rem; color: var(--primary); margin-bottom: 20px; }
+        }}
         
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(40px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        .icon {{ font-size: 3rem; color: var(--primary); margin-bottom: 20px; }}
+        
+        @keyframes slideUp {{
+            from {{ opacity: 0; transform: translateY(40px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
         
         /* Floating decoration */
-        .circle {
+        .circle {{
             position: absolute;
             border-radius: 50%;
             background: var(--primary);
             opacity: 0.1;
             z-index: -1;
-        }
-        .c1 { width: 300px; height: 300px; top: -100px; left: -100px; }
-        .c2 { width: 200px; height: 200px; bottom: -50px; right: -50px; background: #fd7e14; }
+        }}
+        .c1 {{ width: 300px; height: 300px; top: -100px; left: -100px; }}
+        .c2 {{ width: 200px; height: 200px; bottom: -50px; right: -50px; background: #fd7e14; }}
     </style>
 </head>
 <body>
@@ -110,7 +131,9 @@ def generate_landing_page():
         <div class="circle c1"></div>
         <div class="circle c2"></div>
         
-        <i class="fas fa-link icon"></i>
+        <!-- Intégration du logo local Logo.png -->
+        <img src="{LOGO_URL}" alt="Prison Nexus Logo" class="logo-main">
+        
         <h1>PrisonLink</h1>
         <div class="subtitle">Intelligence Pénitentiaire</div>
         
@@ -228,7 +251,6 @@ def generate_dashboard():
 
         # 6bis. CALCUL CENTRALITÉ (Influence)
         print("Calcul de la centralité (Influence)...")
-        # Centralité d'intermédiarité : qui fait le lien entre les groupes ?
         centrality = nx.betweenness_centrality(G, weight='weight')
 
         # 7. Données Visuelles avec GROUPES par Etablissement
@@ -236,7 +258,7 @@ def generate_dashboard():
         node_data = []
         for person in G.nodes():
             degree = G.degree[person]
-            score = centrality.get(person, 0) # Score d'influence
+            score = centrality.get(person, 0)
             
             p_facilities = list(person_facilities.get(person, []))
             p_charges = list(person_charges.get(person, []))
@@ -244,15 +266,14 @@ def generate_dashboard():
             charges_display = ", ".join(p_charges[:3])
             if len(p_charges) > 3: charges_display += ", ..."
 
-            # On assigne le groupe basé sur la première prison trouvée
             main_facility = p_facilities[0] if p_facilities else "Inconnu"
 
             node_data.append({
                 "id": person, 
                 "label": person, 
                 "group": main_facility, 
-                "value": degree, # Taille = connexions
-                "influence": score, # Donnée pour le top 5
+                "value": degree, 
+                "influence": score,
                 "facilities": p_facilities, 
                 "charges": p_charges,
                 "title": f"{person}\nConnexions: {degree}\nInfluence: {score:.4f}\nCharges: {charges_display}"
@@ -298,6 +319,10 @@ def generate_dashboard():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Analyse Réseau - Dashboard</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{LOGO_URL}">
+    
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -306,10 +331,9 @@ def generate_dashboard():
         :root {{
             --text: #212529;
             --background: #f8f9fa;
-            /* COULEURS SIMPLES ET DISTINCTES */
-            --primary: #0d6efd; /* Bleu Franc */
-            --secondary: #fd7e14; /* Orange Franc */
-            --accent: #198754; /* Vert Franc */
+            --primary: #0d6efd; 
+            --secondary: #fd7e14;
+            --accent: #198754; 
             
             --panel-bg: rgba(255, 255, 255, 0.95);
             --shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -332,7 +356,15 @@ def generate_dashboard():
             max-height: 90vh; overflow-y: auto; border: var(--border);
         }}
         
-        h1 {{ font-weight: 700; font-size: 22px; margin: 0 0 25px 0; color: var(--primary); display: flex; align-items: center; gap: 12px; }}
+        .sidebar-header {{
+            display: flex; align-items: center; gap: 12px; margin-bottom: 25px;
+        }}
+        
+        .logo-sidebar {{
+            width: 45px; height: 45px; object-fit: contain; border-radius: 8px;
+        }}
+
+        h1 {{ font-weight: 700; font-size: 22px; margin: 0; color: var(--primary); display: flex; align-items: center; gap: 12px; }}
         .section-title {{ font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6c757d; margin-bottom: 12px; margin-top: 25px; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; }}
 
         .input-wrapper {{ position: relative; margin-bottom:10px; }}
@@ -373,7 +405,6 @@ def generate_dashboard():
         .stat-num {{ font-size: 24px; font-weight: 700; color: var(--primary); display: block; line-height: 1; }}
         .stat-desc {{ font-size: 10px; color: #6c757d; text-transform: uppercase; font-weight: 600; }}
 
-        /* Top 5 Box */
         .top-box {{ background: #fff; padding: 10px; border-radius: 12px; border: 1px solid #ced4da; margin-bottom: 20px; }}
         .top-item {{ display: flex; justify_content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #eee; font-size: 13px; cursor: pointer; transition: 0.2s; }}
         .top-item:last-child {{ border-bottom: none; }}
@@ -389,6 +420,7 @@ def generate_dashboard():
         .btn-secondary:hover {{ background: #f8f9fa; color: #212529; }}
 
         #loading-screen {{ position: fixed; inset: 0; background: var(--background); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s; }}
+        .logo-loading {{ width: 100px; margin-bottom: 20px; }}
         .spinner {{ width: 50px; height: 50px; border: 4px solid #dee2e6; border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 0.8s infinite; margin-bottom: 20px; }}
         @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
         @keyframes slideUp {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 1; transform: translateY(0); }} }}
@@ -397,6 +429,7 @@ def generate_dashboard():
 <body>
 
     <div id="loading-screen">
+        <img src="{LOGO_URL}" class="logo-loading" alt="Logo">
         <div class="spinner"></div>
         <div style="font-size: 14px; font-weight: 600; color: var(--primary); letter-spacing: 2px;">CHARGEMENT DU SYSTÈME</div>
     </div>
@@ -404,7 +437,10 @@ def generate_dashboard():
     <div id="mynetwork"></div>
 
     <div class="sidebar">
-        <h1><i class="fas fa-network-wired"></i> Network Intel.</h1>
+        <div class="sidebar-header">
+            <img src="{LOGO_URL}" alt="Logo" class="logo-sidebar">
+            <h1>Network Intel.</h1>
+        </div>
         
         <div class="stats-grid">
             <div class="stat-box">
@@ -556,7 +592,6 @@ def generate_dashboard():
         statEdges.innerText = allEdges.length;
 
         // --- POPULATE TOP 5 INFLUENCEURS ---
-        // Trier par influence décroissante
         const sortedByInfluence = [...rawData.nodes].sort((a,b) => (b.influence || 0) - (a.influence || 0));
         const top5 = sortedByInfluence.slice(0, 5);
         
@@ -610,7 +645,6 @@ def generate_dashboard():
                 }});
             }}
 
-            // 1. Filtrage des NOEUDS
             const nodesUpdates = [];
             let visibleNodeIds = new Set();
 
@@ -630,7 +664,6 @@ def generate_dashboard():
             }});
             nodes.update(nodesUpdates);
 
-            // 2. Filtrage des LIENS
             const filteredEdges = allEdges.filter(e => {{
                 if (e.raw_days < minDays) return false;
                 if (!visibleNodeIds.has(e.from) || !visibleNodeIds.has(e.to)) return false;
@@ -644,7 +677,6 @@ def generate_dashboard():
             statEdges.innerText = filteredEdges.length;
         }}
 
-        // Listeners
         daysSlider.addEventListener('input', updateVisibility);
         degreeSlider.addEventListener('input', updateVisibility);
         facSelect.addEventListener('change', updateVisibility);
@@ -745,6 +777,8 @@ def generate_dashboard():
             const btn = document.getElementById('btn-physics');
             btn.innerHTML = physicsOn ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play';
         }}
+        
+        updateVisibility();
     </script>
 </body>
 </html>
